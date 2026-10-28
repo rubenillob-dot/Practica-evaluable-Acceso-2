@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "ActualizarSalarios",
+            "request": "launch",
+            "mainClass": "ActualizarSalarios",
+            "projectName": "Practica-evaluable-Acceso-2_e7952fa5"
+        },
+        {
+            "type": "java",
+            "name": "ActualizarSalarios (Principal)",
+            "request": "launch",
+            "mainClass": "ActualizarSalarios",
+            "projectName": "Practica-evaluable-Acceso-2",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "java",
+            "name": "RecrearBaseDatos (Reset)",
+            "request": "launch",
+            "mainClass": "RecrearBaseDatos",
+            "projectName": "Practica-evaluable-Acceso-2",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "java",
+            "name": "Run Current File",
+            "request": "launch",
+            "mainClass": "${file}",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
