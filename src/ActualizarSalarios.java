@@ -7,185 +7,180 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 
-/**
- * Clase principal que actualiza fila a fila el salario de los empleados
- * según las condiciones del enunciado en una única transacción.
- */
+// Clase principal para actualizar los salarios de los empleados con JDBC y SQLite.
+// Toda la actualización se realiza fila a fila dentro de una única transacción.
 public class ActualizarSalarios {
 
-    // Fecha límite para la condición de antigüedad: 01/09/1981
-    private static final LocalDate FECHA_LIMITE_ANTIGUEDAD = LocalDate.of(1981, 9, 1);
+    // Fecha de corte que marca el enunciado: 1 de septiembre de 1981
+    private static final LocalDate FECHA_CORTE = LocalDate.of(1981, 9, 1);
+
+    // Estructura sencilla para guardar el porcentaje y la explicación de cada caso
+    private static class DatosSubida {
+        final double porcentaje;
+        final String motivo;
+
+        DatosSubida(double porcentaje, String motivo) {
+            this.porcentaje = porcentaje;
+            this.motivo = motivo;
+        }
+    }
 
     public static void main(String[] args) {
         System.out.println("===============================================================================");
-        System.out.println("   PROYECTO JDBC: ACTUALIZACIÓN SALARIAL EN TABLA EMP (SQLITE)");
+        System.out.println("         ACTUALIZACIÓN DE SALARIOS EN LA TABLA EMP (JDBC + SQLite)             ");
         System.out.println("===============================================================================");
 
         try (Connection conn = ConexionBD.getConnection()) {
 
-            // Paso 1: Mostrar los datos originales de la tabla emp (Prueba 1)
-            System.out.println("\n--- 1. ESTADO ORIGINAL DE LOS EMPLEADOS ---");
+            // Paso 1: Vemos los salarios que hay en la base de datos antes de hacer nada
+            System.out.println("\n[1] Empleados antes de la actualización:");
             mostrarEmpleados(conn);
 
-            // Paso 2: Ejecutar la actualización transaccional fila a fila
-            System.out.println("\n--- 2. PROCESANDO ACTUALIZACIÓN SALARIAL (FILA A FILA) ---");
+            // Paso 2: Recorremos los empleados fila a fila y aplicamos las subidas
+            System.out.println("\n[2] Procesando empleados fila a fila...");
             actualizarSalarios(conn);
 
-            // Paso 3: Mostrar los datos tras la actualización (Prueba 1)
-            System.out.println("\n--- 3. ESTADO FINAL DE LOS EMPLEADOS TRAS LA TRANSACCIÓN ---");
+            // Paso 3: Volvemos a consultar para comprobar cómo han quedado los salarios
+            System.out.println("\n[3] Empleados tras la transacción:");
             mostrarEmpleados(conn);
 
         } catch (SQLException e) {
-            System.err.println("Error en la conexión o gestión de la base de datos: " + e.getMessage());
+            System.err.println("No se pudo conectar con la base de datos: " + e.getMessage());
         }
     }
 
-    /**
-     * Recorre fila a fila los empleados con un ResultSet y actualiza sus salarios
-     * dentro de una única transacción.
-     *
-     * @param conn Conexión activa a la base de datos
-     */
+    // Recorre todos los empleados con un ResultSet y actualiza sus salarios en una sola transacción
     public static void actualizarSalarios(Connection conn) {
-        String sqlSelect = "SELECT empno, ename, job, hiredate, sal, deptno FROM emp";
-        String sqlUpdate = "UPDATE emp SET sal = ? WHERE empno = ?";
+        String consultaSelect = "SELECT empno, ename, job, hiredate, sal, deptno FROM emp";
+        String sentenciaUpdate = "UPDATE emp SET sal = ? WHERE empno = ?";
 
         try {
-            // DESACTIVAR AUTOCOMMIT: La actualización de todas las filas debe ser una única transacción
+            // Desactivamos el autocommit para que todas las filas formen una única transacción
             conn.setAutoCommit(false);
 
-            try (Statement selectStmt = conn.createStatement();
-                 ResultSet rs = selectStmt.executeQuery(sqlSelect);
-                 PreparedStatement updateStmt = conn.prepareStatement(sqlUpdate)) {
+            try (Statement stmtSelect = conn.createStatement();
+                 ResultSet rs = stmtSelect.executeQuery(consultaSelect);
+                 PreparedStatement stmtUpdate = conn.prepareStatement(sentenciaUpdate)) {
 
-                int totalProcesados = 0;
-                int totalModificados = 0;
+                int subidasAplicadas = 0;
+                int sinCambios = 0;
 
-                // Recorremos de manera repetitiva el ResultSet fila a fila
+                // Recorremos los empleados uno a uno con el ResultSet
                 while (rs.next()) {
-                    totalProcesados++;
                     int empno = rs.getInt("empno");
                     String ename = rs.getString("ename");
                     String job = rs.getString("job");
-                    String hiredateStr = rs.getString("hiredate");
+                    String fechaStr = rs.getString("hiredate");
                     double salActual = rs.getDouble("sal");
                     int deptno = rs.getInt("deptno");
 
-                    LocalDate hiredate = (hiredateStr != null) ? LocalDate.parse(hiredateStr) : null;
+                    LocalDate hiredate = (fechaStr != null) ? LocalDate.parse(fechaStr) : null;
 
-                    // Evaluar condiciones de subida según el orden estricto indicado
-                    double porcentaje = calcularPorcentajeSubida(job, hiredate, deptno);
+                    // Evaluamos qué subida le corresponde según las reglas y su orden
+                    DatosSubida subida = calcularSubida(job, hiredate, deptno);
 
-                    if (porcentaje > 0) {
-                        // Calcular nuevo salario y redondear a 2 decimales
-                        double nuevoSalario = salActual * (1.0 + (porcentaje / 100.0));
+                    if (subida.porcentaje > 0) {
+                        // Calculamos el nuevo sueldo y lo redondeamos a 2 decimales
+                        double nuevoSalario = salActual * (1.0 + (subida.porcentaje / 100.0));
                         nuevoSalario = BigDecimal.valueOf(nuevoSalario)
                                                  .setScale(2, RoundingMode.HALF_UP)
                                                  .doubleValue();
 
-                        // Actualizar fila mediante PreparedStatement
-                        updateStmt.setDouble(1, nuevoSalario);
-                        updateStmt.setInt(2, empno);
-                        updateStmt.executeUpdate();
+                        // Actualizamos este empleado concreto en la base de datos
+                        stmtUpdate.setDouble(1, nuevoSalario);
+                        stmtUpdate.setInt(2, empno);
+                        stmtUpdate.executeUpdate();
 
-                        totalModificados++;
-                        System.out.printf("  [SUBIDA +%4.1f%%] Empno: %d | %-9s (%-9s) | Salario anterior: %7.2f € -> Nuevo salario: %7.2f €%n",
-                                porcentaje, empno, ename, job, salActual, nuevoSalario);
+                        subidasAplicadas++;
+                        System.out.printf("  • %-7s (%-9s) -> +%4.1f%% [%s]%n",
+                                ename, job, subida.porcentaje, subida.motivo);
+                        System.out.printf("    Sueldo: %8.2f €  --->  %8.2f €%n",
+                                salActual, nuevoSalario);
                     } else {
-                        System.out.printf("  [SIN CAMBIO   ] Empno: %d | %-9s (%-9s) | Salario: %7.2f €%n",
-                                empno, ename, job, salActual);
+                        sinCambios++;
+                        System.out.printf("  • %-7s (%-9s) -> Sin cambios [%s]%n",
+                                ename, job, subida.motivo);
+                        System.out.printf("    Sueldo: %8.2f € (se mantiene)%n",
+                                salActual);
                     }
                 }
 
                 // =========================================================================
-                // PRUEBA 2 PARA LA CORRECCIÓN ORAL (DEMOSTRACIÓN DE ROLLBACK):
-                // Descomenta la siguiente línea para abortar la ejecución antes del commit
-                // y comprobar que ningún salario se modifica en la base de datos.
+                // PARA LA CORRECCIÓN ORAL (PRUEBA 2: DEMOSTRACIÓN DE ROLLBACK)
+                // Si descomentas la siguiente línea, simulamos un fallo antes de guardar
+                // para demostrar que el rollback deja todos los sueldos exactamente igual:
                 // =========================================================================
-                // if (true) throw new SQLException(">> SIMULACIÓN DE ERROR MANUAL: ABORTANDO ANTES DEL COMMIT <<");
+                // if (true) throw new SQLException("Fallo simulado para comprobar que el rollback funciona.");
 
-                // Confirmar la transacción si todas las filas se actualizaron sin errores
+                // Si hemos llegado aquí sin errores, guardamos todos los cambios juntos
                 conn.commit();
-                System.out.println("\n>> ÉXITO: Transacción confirmada (COMMIT).");
-                System.out.println("   Empleados procesados: " + totalProcesados + " | Salarios modificados: " + totalModificados);
+                System.out.println("\n-> Transacción confirmada (commit con éxito).");
+                System.out.println("   Resumen: " + subidasAplicadas + " empleados con subida y " + sinCambios + " empleados sin cambios.");
 
             } catch (SQLException e) {
-                // Si ocurre cualquier error, abortamos la transacción completa
-                System.err.println("\n>> ATENCIÓN: Ha ocurrido un fallo durante la actualización: " + e.getMessage());
+                // Si salta cualquier error, cancelamos la transacción entera
+                System.err.println("\n-> Ha ocurrido un error durante la actualización: " + e.getMessage());
                 conn.rollback();
-                System.err.println(">> ROLLBACK realizado: Se han cancelado todos los cambios de la transacción.");
+                System.err.println("-> Rollback ejecutado: no se ha modificado ningún dato en la base de datos.");
             } finally {
-                // Restauramos el modo autocommit por defecto
+                // Volvemos a dejar el autocommit activado por defecto
                 conn.setAutoCommit(true);
             }
 
         } catch (SQLException e) {
-            System.err.println("Error en la gestión transaccional de la conexión: " + e.getMessage());
+            System.err.println("Error en la transacción: " + e.getMessage());
         }
     }
 
-    /**
-     * Evalúa las condiciones en el orden estricto especificado en el enunciado:
-     * 1. Gerentes (job = MANAGER) -> +10%
-     * 2. Antigüedad anterior al 01/09/81 -> +15%
-     * 3. Para el resto de los empleados:
-     *    - Analistas (job = ANALYST) del departamento 20 -> +5%
-     *    - Vendedores (job = SALESMAN) -> +8%
-     *
-     * @param job Puesto de trabajo
-     * @param hiredate Fecha de contratación
-     * @param deptno Número de departamento
-     * @return Porcentaje de incremento salarial (0.0 si no aplica ninguna)
-     */
-    public static double calcularPorcentajeSubida(String job, LocalDate hiredate, int deptno) {
+    // Calcula el porcentaje de subida siguiendo el orden exacto del enunciado:
+    // 1º Gerentes (MANAGER): 10%
+    // 2º Antigüedad anterior al 01/09/1981: 15%
+    // 3º Resto:
+    //    - Analistas (ANALYST) del departamento 20: 5%
+    //    - Vendedores (SALESMAN): 8%
+    public static DatosSubida calcularSubida(String job, LocalDate hiredate, int deptno) {
         if (job == null) {
-            return 0.0;
+            return new DatosSubida(0.0, "Sin puesto asignado");
         }
 
-        // Condición 1: Los gerentes (job = MANAGER) tienen una subida del 10%
-        if (job.equalsIgnoreCase("MANAGER")) {
-            return 10.0;
+        // 1ª regla: Gerentes (MANAGER)
+        if ("MANAGER".equalsIgnoreCase(job)) {
+            return new DatosSubida(10.0, "Puesto de gerente (MANAGER)");
         }
 
-        // Condición 2: Antigüedad anterior al 01/09/81 tienen una subida del 15%
-        if (hiredate != null && hiredate.isBefore(FECHA_LIMITE_ANTIGUEDAD)) {
-            return 15.0;
+        // 2ª regla: Antigüedad anterior al 01/09/1981
+        // Nota: Si un vendedor o analista entró antes de esta fecha, entra aquí (15%)
+        if (hiredate != null && hiredate.isBefore(FECHA_CORTE)) {
+            return new DatosSubida(15.0, "Antigüedad anterior al 01/09/1981");
         }
 
-        // Condición 3: Para el resto de los empleados
-        if (job.equalsIgnoreCase("ANALYST") && deptno == 20) {
-            // Analistas del departamento 20 tienen una subida del 5%
-            return 5.0;
+        // 3ª regla: Para el resto de empleados
+        if ("ANALYST".equalsIgnoreCase(job) && deptno == 20) {
+            return new DatosSubida(5.0, "Analista del departamento 20");
         }
 
-        if (job.equalsIgnoreCase("SALESMAN")) {
-            // Vendedores tienen una subida del 8%
-            return 8.0;
+        if ("SALESMAN".equalsIgnoreCase(job)) {
+            return new DatosSubida(8.0, "Puesto de vendedor (SALESMAN)");
         }
 
-        // Resto sin subida
-        return 0.0;
+        // Si no cumple ninguna de las anteriores, mantiene su salario
+        return new DatosSubida(0.0, "No cumple condiciones de subida");
     }
 
-    /**
-     * Muestra por consola la lista de empleados de forma formateada.
-     *
-     * @param conn Conexión activa a la base de datos
-     * @throws SQLException si ocurre un error en la consulta
-     */
+    // Muestra por pantalla una tabla ordenada y fácil de leer
     public static void mostrarEmpleados(Connection conn) throws SQLException {
         String sql = "SELECT empno, ename, job, hiredate, sal, deptno FROM emp ORDER BY empno";
 
-        System.out.println("-------------------------------------------------------------------------------");
-        System.out.printf("%-6s | %-10s | %-10s | %-12s | %-10s | %-6s%n",
-                "EMPNO", "NOMBRE", "OFICIO", "FECHA ALTA", "SALARIO", "DEPTO");
-        System.out.println("-------------------------------------------------------------------------------");
+        System.out.println("  -------------------------------------------------------------------------");
+        System.out.printf("   %-5s | %-9s | %-10s | %-11s | %-11s | %-6s%n",
+                "ID", "Nombre", "Oficio", "Fecha Alta", "Salario", "Depto");
+        System.out.println("  -------------------------------------------------------------------------");
 
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
 
             while (rs.next()) {
-                System.out.printf("%-6d | %-10s | %-10s | %-12s | %8.2f € | %-6d%n",
+                System.out.printf("   %-5d | %-9s | %-10s | %-11s | %9.2f € | %-6d%n",
                         rs.getInt("empno"),
                         rs.getString("ename"),
                         rs.getString("job"),
@@ -194,6 +189,6 @@ public class ActualizarSalarios {
                         rs.getInt("deptno"));
             }
         }
-        System.out.println("-------------------------------------------------------------------------------");
+        System.out.println("  -------------------------------------------------------------------------");
     }
 }

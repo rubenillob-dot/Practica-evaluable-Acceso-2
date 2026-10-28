@@ -14,24 +14,15 @@ import java.sql.Statement;
 import java.util.Properties;
 import java.util.logging.Logger;
 
-/**
- * Clase encargada de gestionar la conexión con la base de datos SQLite
- * y proveer utilidades como el reinicio de datos iniciales.
- *
- * Incluye carga automática de librerías para funcionar tanto si se ejecuta
- * desde el IDE (botón Run), desde terminal o con cualquier configuración de classpath.
- */
+// Clase de utilidad para conectarnos a la base de datos SQLite y restaurar los datos
 public class ConexionBD {
 
-    private static final String DB_FILE_NAME = "empdept.db";
-    private static final String SCRIPT_SQL_NAME = "emp_dept_salgrade_SQLITE.sql";
+    private static final String ARCHIVO_BD = "empdept.db";
+    private static final String SCRIPT_SQL = "emp_dept_salgrade_SQLITE.sql";
 
-    private static boolean driverRegistrado = false;
+    private static boolean driverListo = false;
 
-    /**
-     * Driver envoltorio para registrar un Driver cargado dinámicamente
-     * en caso de que el entorno no haya incluido el classpath de librerias/.
-     */
+    // Envoltorio para poder registrar el driver en DriverManager si se carga desde el JAR
     private static class DriverShim implements Driver {
         private final Driver driver;
         DriverShim(Driver d) { this.driver = d; }
@@ -44,9 +35,7 @@ public class ConexionBD {
         @Override public Logger getParentLogger() throws SQLFeatureNotSupportedException { return this.driver.getParentLogger(); }
     }
 
-    /**
-     * Localiza un archivo buscando en las rutas habituales del proyecto (db/, sql/, raíz o directorio superior).
-     */
+    // Busca un fichero tanto si estamos en la raíz del proyecto como si estamos en otra carpeta
     public static File buscarArchivo(String nombre) {
         String[] posiblesRutas = {
             "db/" + nombre,
@@ -61,7 +50,6 @@ public class ConexionBD {
             if (f.exists()) return f;
         }
 
-        // Si la carpeta db/ existe, devolver la ruta dentro de db/
         File dirDb = new File("db");
         if (dirDb.exists() && dirDb.isDirectory()) {
             return new File("db", nombre);
@@ -70,9 +58,7 @@ public class ConexionBD {
         return new File(nombre);
     }
 
-    /**
-     * Busca el archivo JAR del driver SQLite en las carpetas habituales.
-     */
+    // Busca el JAR del driver SQLite en la carpeta librerias o lib
     private static File buscarJarSQLite() {
         String[] posiblesCarpetas = {"librerias", "../librerias", "lib", "../lib", "."};
         for (String carpeta : posiblesCarpetas) {
@@ -91,58 +77,48 @@ public class ConexionBD {
         return null;
     }
 
-    /**
-     * Asegura que el driver JDBC de SQLite esté cargado y registrado.
-     * Si no está en el classpath normal, lo carga automáticamente desde la carpeta librerias/.
-     */
+    // Comprueba que el driver de SQLite esté disponible.
+    // Si el editor no lo tiene en el classpath, lo cargamos desde la carpeta librerias.
     private static synchronized void asegurarDriver() throws SQLException {
-        if (driverRegistrado) {
+        if (driverListo) {
             return;
         }
 
         try {
-            // Intento 1: Carga normal desde el classpath del proyecto
+            // Intento normal: si ya está en el classpath
             Class.forName("org.sqlite.JDBC");
-            driverRegistrado = true;
+            driverListo = true;
         } catch (ClassNotFoundException e) {
-            // Intento 2: Carga dinámica directa desde librerias/ o lib/
+            // Si no está, lo buscamos en librerias/ y lo registramos a mano
             File jar = buscarJarSQLite();
             if (jar != null && jar.exists()) {
                 try {
                     URLClassLoader loader = new URLClassLoader(new URL[]{ jar.toURI().toURL() }, ConexionBD.class.getClassLoader());
                     Driver d = (Driver) Class.forName("org.sqlite.JDBC", true, loader).getDeclaredConstructor().newInstance();
                     DriverManager.registerDriver(new DriverShim(d));
-                    driverRegistrado = true;
+                    driverListo = true;
                 } catch (Exception ex) {
-                    throw new SQLException("Error al cargar dinámicamente el driver desde " + jar.getPath() + ": " + ex.getMessage(), ex);
+                    throw new SQLException("Error al cargar el driver desde " + jar.getName() + ": " + ex.getMessage(), ex);
                 }
             } else {
-                throw new SQLException("No se encontró el driver JDBC de SQLite en el classpath ni en la carpeta 'librerias/'.", e);
+                throw new SQLException("No se encontró el driver de SQLite en la carpeta librerias.", e);
             }
         }
     }
 
-    /**
-     * Obtiene una conexión activa a la base de datos SQLite.
-     *
-     * @return Objeto Connection activo
-     * @throws SQLException si ocurre un error de conexión
-     */
+    // Abre y devuelve una conexión con la base de datos SQLite
     public static Connection getConnection() throws SQLException {
         asegurarDriver();
-        File dbFile = buscarArchivo(DB_FILE_NAME);
+        File dbFile = buscarArchivo(ARCHIVO_BD);
         String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
         return DriverManager.getConnection(url);
     }
 
-    /**
-     * Recrea las tablas e inserta los datos iniciales ejecutando el script SQL.
-     * Muy útil para la preparación de las pruebas en la corrección oral.
-     */
+    // Lee el script SQL y vuelve a crear las tablas con los datos originales
     public static void reiniciarBaseDatos() {
-        File scriptFile = buscarArchivo(SCRIPT_SQL_NAME);
+        File scriptFile = buscarArchivo(SCRIPT_SQL);
         if (!scriptFile.exists()) {
-            System.err.println("No se encontró el archivo de script: " + SCRIPT_SQL_NAME);
+            System.err.println("No se ha encontrado el archivo SQL: " + SCRIPT_SQL);
             return;
         }
 
@@ -154,19 +130,18 @@ public class ConexionBD {
             String linea;
             while ((linea = br.readLine()) != null) {
                 linea = linea.trim();
-                // Ignorar comentarios y líneas vacías
+                // Saltamos comentarios del script y líneas en blanco
                 if (linea.startsWith("--") || linea.isEmpty()) {
                     continue;
                 }
                 sql.append(linea).append(" ");
-                // Si la sentencia termina en ';', se ejecuta
+                // Al llegar al punto y coma ejecutamos la sentencia
                 if (linea.endsWith(";")) {
                     stmt.execute(sql.toString());
                     sql.setLength(0);
                 }
             }
-            File dbFile = buscarArchivo(DB_FILE_NAME);
-            System.out.println("Base de datos '" + dbFile.getName() + "' reiniciada con éxito con los datos originales.");
+            System.out.println("Base de datos reiniciada correctamente con los datos originales.");
 
         } catch (SQLException | IOException e) {
             System.err.println("Error al reiniciar la base de datos: " + e.getMessage());

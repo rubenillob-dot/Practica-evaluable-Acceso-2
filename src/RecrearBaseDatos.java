@@ -1,12 +1,10 @@
-/**
- * Clase auxiliar para restaurar rápidamente la base de datos con sus datos iniciales.
- * Facilita repetir las pruebas tantas veces como sea necesario durante la corrección oral.
- */
+// Programa para restaurar la base de datos a sus valores iniciales.
+// Nos sirve para hacer las pruebas en la corrección oral tantas veces como haga falta.
 public class RecrearBaseDatos {
 
     public static void main(String[] args) {
-        System.out.println("Restaurando base de datos a su estado original...");
+        System.out.println("Restaurando los datos iniciales de la base de datos...");
         ConexionBD.reiniciarBaseDatos();
-        System.out.println("Completado. Ahora puedes ejecutar ActualizarSalarios.");
+        System.out.println("Listo. Ya puedes ejecutar ActualizarSalarios.");
     }
 }
