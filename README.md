@@ -17,7 +17,8 @@ Este proyecto resuelve el ejercicio de actualización salarial fila a fila de la
 │   └── emp_dept_salgrade_MYSQL.sql  # Script SQL original para MySQL
 ├── docs/                            # Documentación y enunciados de la práctica
 │   ├── Enunciado.md                 # Enunciado original de la tarea
-│   └── Enunciado_SQLite.md          # Enunciado adaptado a SQLite
+│   ├── Enunciado_SQLite.md          # Enunciado adaptado a SQLite
+│   └── Guion_Defensa_Oral.md        # Guión paso a paso para la exposición oral y entrega zip
 ├── librerias/                       # Librerías JDBC requeridas
 │   ├── sqlite-jdbc-3.49.1.0.jar
 │   ├── slf4j-api-2.0.17.jar
